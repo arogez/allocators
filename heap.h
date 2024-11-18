@@ -1,53 +1,76 @@
 /* heap.h - memory allocation header */
-/* primitive functions to keep track of heap allocated memory */
+/* Primitive functions to keep track of heap allocated memory */
 
 #ifndef HEAP_H
 #define HEAP_H
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <assert.h>
 
-/* TODO : implementation of calloc and realloc functions */
+#include "bit.h"
+
+enum heap_flag_t : unsigned {
+        COUNT,
+        CLEAR,
+        DEBUG
+};
+
+/* Bitmasks */
+#define HEAP_COUNT bit(COUNT) 
+#define HEAP_CLEAR bit(CLEAR) 
+#define HEAP_DEBUG bit(DEBUG) 
 
 struct heap {
+        enum heap_flag_t hft;
         unsigned alloc_count;
 };
 
-void heap_init(struct heap *h)
+void heap_init(struct heap *h, const enum heap_flag_t hft)
 {
         h->alloc_count = 0;
+        h->hft = hft;
 }
 
-void *heap_alloc(struct heap *h, const unsigned nbytes) 
+void *heap_alloc(struct heap *h, const size_t nbytes) 
 {
         void *ptr;
         
         if (nbytes == 0) return NULL;
 
         ptr = malloc(nbytes);
-        h->alloc_count++;
 
-        if (ptr != NULL) {
-                printf("heap_alloc @x%lx: size(%zu), n_alloc(%i)\n", ptr, nbytes, h->alloc_count); 
+        if (ptr) {
+                if (h->hft & HEAP_COUNT) h->alloc_count++;
+                if (h->hft & HEAP_DEBUG) printf("heap_alloc @x%lx size(%zu)\n", ptr, nbytes); 
+                if (h->hft & HEAP_CLEAR) memset(ptr, 0, nbytes);
         }
-
+        
         return ptr;
 }
 
 void heap_free(struct heap *h, void *ptr)
 {
         if (ptr == NULL) return;
-
-        printf("heap_free  @x%lx: n_alloc(%i)\n", ptr, h->alloc_count); 
         
-        assert(h->alloc_count != 0);
-        h->alloc_count--;
+        if (h->hft & HEAP_COUNT) {
+                assert(h->alloc_count != 0);
+                h->alloc_count--;
+        }
+
+        if (h->hft & HEAP_DEBUG) printf("heap_free  @x%lx\n", ptr);
 
         free(ptr);
+}
 
-        if (h->alloc_count == 0) {
-                printf("heap info: all heap allocated memory freed\n");
+void heap_term(struct heap *h) {
+  
+        if ((h->hft & HEAP_COUNT) && (h->hft & HEAP_DEBUG)) {
+                if (h->alloc_count) 
+                        printf("heap info: (%i) allocs not freed\n", h->alloc_count);
+                else 
+                        printf("heap info: all allocs freed\n");
         }
 }
 
