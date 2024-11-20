@@ -11,23 +11,23 @@
 
 #include "bit.h"
 
-enum heap_flag_t : unsigned {
-        COUNT,
-        CLEAR,
-        DEBUG
+enum heap_flag : unsigned {
+        H_COUNT,
+        H_CLEAR,
+        H_DEBUG
 };
 
 /* Bitmasks */
-#define HEAP_COUNT bit(COUNT) 
-#define HEAP_CLEAR bit(CLEAR) 
-#define HEAP_DEBUG bit(DEBUG) 
+#define HEAP_COUNT bit(H_COUNT) 
+#define HEAP_CLEAR bit(H_CLEAR) 
+#define HEAP_DEBUG bit(H_DEBUG) 
 
 struct heap {
-        enum heap_flag_t hft;
+        enum heap_flag hft;
         unsigned alloc_count;
 };
 
-void heap_init(struct heap *h, const enum heap_flag_t hft)
+void heap_init(struct heap *h, const enum heap_flag hft)
 {
         h->alloc_count = 0;
         h->hft = hft;
@@ -37,17 +37,51 @@ void *heap_alloc(struct heap *h, const size_t nbytes)
 {
         void *ptr;
         
-        if (nbytes == 0) return NULL;
+        if (nbytes == 0) 
+                return NULL;
 
         ptr = malloc(nbytes);
-
-        if (ptr) {
-                if (h->hft & HEAP_COUNT) h->alloc_count++;
-                if (h->hft & HEAP_DEBUG) printf("heap_alloc @x%lx size(%zu)\n", ptr, nbytes); 
-                if (h->hft & HEAP_CLEAR) memset(ptr, 0, nbytes);
+         
+        if (!ptr) {
+                if (h->hft & HEAP_DEBUG) 
+                        printf("heap info: could not allocate requested size\n"); 
+                return NULL;
         }
+
+        if (h->hft & HEAP_COUNT)
+                h->alloc_count++;
+        if (h->hft & HEAP_CLEAR)
+                memset(ptr, 0, nbytes);
+        if (h->hft & HEAP_DEBUG)
+                printf("heap_alloc @x%lx size(%zu)\n", ptr, nbytes); 
         
         return ptr;
+}
+
+void *heap_aligned_alloc(struct heap *h, const size_t nbytes, const size_t alignment)
+{
+        void *ptr_0, **ptr_1;
+
+        if (alignment == 0 || (nbytes & (nbytes - 1)) != 0)
+                return NULL;
+
+        if (nbytes & (alignment - 1) != 0)
+                return NULL;
+        
+        const size_t offset = alignment - 1 + sizeof(void*);
+        ptr_0 = heap_alloc(h, nbytes + offset); 
+        
+        if(!ptr_0)
+                return NULL;
+
+        ptr_1 = (void*)(((uintptr_t)ptr_0 + offset) & ~(alignment -1)); 
+        
+        if (h->hft & HEAP_DEBUG) 
+                printf("heap_aligned_alloc @x%lx\n", ptr_1);
+
+        ptr_1[-1] = ptr_0;
+
+        return ptr_1;
 }
 
 void heap_free(struct heap *h, void *ptr)
@@ -62,6 +96,11 @@ void heap_free(struct heap *h, void *ptr)
         if (h->hft & HEAP_DEBUG) printf("heap_free  @x%lx\n", ptr);
 
         free(ptr);
+}
+
+void heap_aligned_free(struct heap *h, void *ptr)
+{
+        heap_free(h, ((void**)ptr)[-1]);
 }
 
 void heap_term(struct heap *h) {
