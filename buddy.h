@@ -140,15 +140,14 @@ void buddy_bit_update(const uint8_t order,
 
 void *buddy_alloc(struct buddy_heap *b, const size_t nbytes) 
 {
-        void *ptr_0;
-        struct buddy_block_meta **ptr_1;
-        
+        void *ptr_0, **ptr_1;
+         
         if (nbytes == 0)
                 return NULL;
 
-        const size_t offset = b->alignment - 1 + sizeof(struct buddy_block_meta);
+        const size_t align_offset = b->alignment - 1 + sizeof(struct buddy_block_meta);
 
-        const uint8_t index = buddy_nbytes_query_to_index(nbytes + offset, b->order);
+        const uint8_t index = buddy_nbytes_query_to_index(nbytes + align_offset, b->order);
         uint32_t split = (b->nodes[index].head == NULL);
         
         if (split) {
@@ -169,15 +168,63 @@ void *buddy_alloc(struct buddy_heap *b, const size_t nbytes)
         }
         
         ptr_0 = b->nodes[index].head;
-        ptr_1 = (void *)(((uintptr_t)ptr_0 + offset) & ~(b->alignment - 1));
+        ptr_1 = (void *)(((uintptr_t)ptr_0 + align_offset) & ~(b->alignment - 1));
         
-        //ptr_1[-1]->order = index;
-        //ptr_1[-1]->address = ptr_0;
-
+        struct buddy_block_meta *m = (void *)ptr_1;
+        m[-1].order = index;
+        m[-1].address = ptr_0;
+        
         buddy_node_update(index, b->order, b->nodes, ptr_0, split);
         buddy_bit_update(index, b->order, b->meta, b->data, ptr_0);
 
         return ptr_1; 
 }
+
+void buddy_free(struct buddy_heap *b, void *ptr) 
+{
+        if(ptr == NULL)
+                return;
+        
+        void *ptr_0, *ptr_1;
+        struct buddy_block_meta *m = ptr;
+        
+        uint8_t order = m[-1].order;
+        ptr_0 = m[-1].address;
+
+        const uint32_t offset = (uintptr_t)ptr_0 - (uintptr_t)b->data; 
+        const uint32_t bit_index = buddy_bit_position(order, b->order, offset);
+        
+        uint32_t *bitset = b->meta;
+
+        if (bit_check(bitset, bit_index) && bit_index != 0) {
+
+                const uint32_t buddy_offset = offset ^ (1 << b->order - order);
+                void *buddy = (void *)((uintptr_t)(b->data + buddy_offset));
+                
+                if (list_delete(&b->nodes[order].head, buddy) == 0) {
+                        //log error here
+                }
+
+                if (offset > buddy_offset) {
+                        ptr_0 = buddy;
+                } 
+                
+                const size_t align_offset = b->alignment - 1 + sizeof(struct buddy_block_meta);
+                ptr_1 = (void *)(((uintptr_t)ptr_0 + align_offset) & ~(b->alignment - 1));
+                
+                m = (void *)ptr_1;
+
+                m[-1].order = order - 1;
+                m[-1].address = ptr_0;
+
+                buddy_free(b, ptr_1);
+
+                bit_switch(bitset, bit_index);
+        }
+        
+        list_push(&b->nodes[order].head, ptr_0); 
+        bit_switch(bitset, bit_index);
+}
+
 
 #endif
