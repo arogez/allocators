@@ -14,8 +14,13 @@
 enum buddy_order : uint8_t {
 
         BUDDY_MAX_ORDER = 28,
-        /* minimum size of 1 block: 128 bytes */
+        /* minimum size of 1 block: 64 bytes */
         BUDDY_MIN_ORDER = 6
+};
+
+struct buddy_block_meta {
+        uint8_t                 order;
+        void*                   address;
 };
 
 struct buddy_heap {
@@ -37,6 +42,8 @@ uint32_t buddy_heap_init(struct buddy_heap *b,
         size_t meta_sz = (size_t)(((bits_count + CHAR_BIT - 1) & -CHAR_BIT) / CHAR_BIT);
         
         b->order = order;
+
+        /* todo : check if alignment is power of 2 here */
         b->alignment = alignment;
 
         b->meta = heap_aligned_alloc(h, meta_sz, 32);
@@ -133,19 +140,19 @@ void buddy_bit_update(const uint8_t order,
 
 void *buddy_alloc(struct buddy_heap *b, const size_t nbytes) 
 {
-        void *ptr;
+        void *ptr_0;
+        struct buddy_block_meta **ptr_1;
         
         if (nbytes == 0)
                 return NULL;
 
-        //const size_t offset = b->alignment - 1 + sizeof(uint8_t) + sizeof(void *);
-        
+        const size_t offset = b->alignment - 1 + sizeof(struct buddy_block_meta);
+
         const uint8_t index = buddy_nbytes_query_to_index(nbytes + offset, b->order);
         uint32_t split = (b->nodes[index].head == NULL);
         
         if (split) {
                 const int8_t node_index = buddy_first_splittable_node_index(index, b->nodes);      
-                printf("node index = %i\n", node_index); 
                 
                 if (node_index == -1) {
                         //log error here
@@ -153,20 +160,24 @@ void *buddy_alloc(struct buddy_heap *b, const size_t nbytes)
                 }
 
                 for (int i = node_index; i < index; i++) {
-                        ptr = (void *)b->nodes[i].head;
-                        buddy_node_update(i, b->order, b->nodes, ptr, split);
-                        buddy_bit_update(i, b->order, b->meta, b->data, ptr);
+                        ptr_0 = (void *)b->nodes[i].head;
+                        buddy_node_update(i, b->order, b->nodes, ptr_0, split);
+                        buddy_bit_update(i, b->order, b->meta, b->data, ptr_0);
                 }
                 
                 split = 0; 
         }
+        
+        ptr_0 = b->nodes[index].head;
+        ptr_1 = (void *)(((uintptr_t)ptr_0 + offset) & ~(b->alignment - 1));
+        
+        //ptr_1[-1]->order = index;
+        //ptr_1[-1]->address = ptr_0;
 
-        ptr = b->nodes[index].head;
+        buddy_node_update(index, b->order, b->nodes, ptr_0, split);
+        buddy_bit_update(index, b->order, b->meta, b->data, ptr_0);
 
-        buddy_node_update(index, b->order, b->nodes, ptr, split);
-        buddy_bit_update(index, b->order, b->meta, b->data, ptr);
-
-        return ptr;
+        return ptr_1; 
 }
 
 #endif
