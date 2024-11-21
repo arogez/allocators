@@ -48,12 +48,13 @@ void *heap_alloc(struct heap *h, const size_t nbytes)
                 return NULL;
         }
 
-        if (h->hft & HEAP_COUNT)
+        if (h->hft & HEAP_COUNT) {
                 h->alloc_count++;
+        }
         if (h->hft & HEAP_CLEAR)
                 memset(ptr, 0, nbytes);
         if (h->hft & HEAP_DEBUG)
-                printf("heap_alloc @x%lx size(%zu)\n", ptr, nbytes); 
+                printf("heap_alloc @%p size(%zu)\n", ptr, nbytes); 
         
         return ptr;
 }
@@ -67,7 +68,7 @@ void *heap_aligned_alloc(struct heap *h, const size_t nbytes, const size_t align
 
         if (nbytes & (alignment - 1) != 0)
                 return NULL;
-        
+       
         const size_t offset = alignment - 1 + sizeof(void*);
         ptr_0 = heap_alloc(h, nbytes + offset); 
         
@@ -77,7 +78,7 @@ void *heap_aligned_alloc(struct heap *h, const size_t nbytes, const size_t align
         ptr_1 = (void*)(((uintptr_t)ptr_0 + offset) & ~(alignment -1)); 
         
         if (h->hft & HEAP_DEBUG) 
-                printf("heap_aligned_alloc @x%lx\n", ptr_1);
+                printf("heap_aligned_alloc @%p\n", ptr_1);
 
         ptr_1[-1] = ptr_0;
 
@@ -93,7 +94,7 @@ void heap_free(struct heap *h, void *ptr)
                 h->alloc_count--;
         }
 
-        if (h->hft & HEAP_DEBUG) printf("heap_free  @x%lx\n", ptr);
+        if (h->hft & HEAP_DEBUG) printf("heap_free  @%p\n", ptr);
 
         free(ptr);
 }
