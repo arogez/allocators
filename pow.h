@@ -1,7 +1,8 @@
 #ifndef POW_H
 #define POW_H
 
-const unsigned pow2_ceil(unsigned a)
+/* round up to the next highest power of 2 of a 32-bit integer */
+const unsigned pow2_roundup(unsigned a)
 {
         a--;
         a |= a >> 1;

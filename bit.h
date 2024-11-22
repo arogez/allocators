@@ -4,12 +4,17 @@
 #define BIT_H
 
 #define bit(A)                  (1 << (A))
+
+/* macros to manipulate bits in a 32-bit datatype */
 #define bit_set(A,B)            (A[(B/32)] |= 1 << (B%32))
 #define bit_clear(A,B)          (A[(B/32)] &= ~(1 << (B%32)))
 #define bit_check(A,B)          (A[(B/32)] & (1 << (B%32)))
 #define bit_switch(A, B)        bit_check(A, B) ? bit_clear(A, B) : bit_set(A, B)
 
-const uint8_t lowest_bit_index(const uint32_t a)
+
+/* count the consecutive zero bits in a 32 bits datatype
+ * see: https://graphics.stanford.edu/~seander/bithacks.html#ZerosOnRightMultLookup */
+const uint8_t trailing_zeros_count(const uint32_t a)
 {
         /* hashtable. see https://en.wikipedia.org/wiki/De_Bruijn_sequence */
         static const uint32_t bit_position_lookup[32] = 

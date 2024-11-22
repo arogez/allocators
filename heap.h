@@ -62,20 +62,30 @@ void *heap_alloc(struct heap *h, const size_t nbytes)
 void *heap_aligned_alloc(struct heap *h, const size_t nbytes, const size_t alignment)
 {
         void *ptr_0, **ptr_1;
-
-        if (alignment == 0 || (nbytes & (nbytes - 1)) != 0)
+        
+        /* check if alignment is a power of 2 */
+        if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+                if(h->hft & HEAP_DEBUG) {
+                        printf("heap_aligned info: alignment not a power of 2\n");
+                }
                 return NULL;
+        }
 
-        if (nbytes & (alignment - 1) != 0)
+        /* check if alignment is a factor of requested size */
+        if (nbytes & (alignment - 1) != 0) {
+                if(h->hft & HEAP_DEBUG) {
+                        printf("heap_aligned info: requested size not a multiple of alignment\n");
+                }
                 return NULL;
+        }
        
         const size_t offset = alignment - 1 + sizeof(void*);
         ptr_0 = heap_alloc(h, nbytes + offset); 
         
-        if(!ptr_0)
+        if (ptr_0 == NULL)
                 return NULL;
 
-        ptr_1 = (void*)(((uintptr_t)ptr_0 + offset) & ~(alignment -1)); 
+        ptr_1 = (void*)(((uintptr_t)ptr_0 + offset) & ~(alignment - 1)); 
         
         if (h->hft & HEAP_DEBUG) 
                 printf("heap_aligned_alloc @%p\n", ptr_1);

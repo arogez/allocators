@@ -1,4 +1,26 @@
-/* buddy.h - implementation of the buddy allocation strategy */
+/* buddy.h -- Implementation of the buddy allocation strategy
+ * 
+ * MIT License
+ * Copyright (c) 2024 arogez
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 
 #ifndef BUDDY_H
 #define BUDDY_H
@@ -11,10 +33,11 @@
 #include "list.h"
 #include "pow.h"
 
-enum buddy_order : uint8_t {
+#define META_ALIGNMENT 32
 
-        K_MAX_ORDER = 28,
-        K_MIN_ORDER = 6
+enum buddy_order : uint8_t {
+        BUDDY_MAX_K = 28,
+        BUDDY_MIN_K = 6
 };
 
 /* Description of the approach ("buddy system reservation & liberation") can be found in 
@@ -45,81 +68,78 @@ enum buddy_order : uint8_t {
  *      block to be used at deallocation. 
  *           
  *      ** Block of size 2^k
- *      +----------------+-------------------------------------------------------+
- *      |  Prefix        | Aligned memory block                                  | 
- *      +----------------+-------------------------------------------------------+
+ *      +----------------+--------------------------------------------------------+
+ *      |  Prefix        | Aligned memory block                                   | 
+ *      +----------------+--------------------------------------------------------+
  *                       |
  *                       `-> address return to user
  *
  */
 
 struct buddy_block_prefix {
-        uint8_t                 k;
-        void*                   address;
+        enum buddy_order        k;
+        void                    *ptr;
 };
 
 struct buddy_heap {
-        enum buddy_order        order;
+        struct heap             *h;
+        enum buddy_order        k;
         size_t                  alignment; 
-        struct list             nodes[K_MAX_ORDER];
-        void                    *meta;
+        struct list             nodes[BUDDY_MAX_K];
+        void                    *bits;
         void                    *data;
 };
 
-uint32_t buddy_heap_init(struct buddy_heap *b, 
-                         struct heap *h, 
-                         const uint8_t order, 
-                         const size_t alignment)
+int buddy_heap_init(struct buddy_heap *b, struct heap *h, uint8_t k, size_t alignment)
 {
-        if (!(order > K_MIN_ORDER && order <= K_MAX_ORDER)) return -1;
+        if (!(k > BUDDY_MIN_K && k <= BUDDY_MAX_K)) return -1;
         
-        const unsigned bits_count = bit(order - K_MIN_ORDER);
-        size_t meta_sz = (size_t)(((bits_count + CHAR_BIT - 1) & -CHAR_BIT) / CHAR_BIT);
-        
-        b->order = order;
+        /* check if alignment is a power of 2 */
+        if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+                if(h->hft & HEAP_DEBUG) {
+                        printf("buddy_heap info: alignment not a power of 2\n");
+                }
 
-        /* todo : check if alignment is power of 2 here */
+                return -1;
+        }
+         
+        const int nbits = bit(k - BUDDY_MIN_K);
+        size_t meta_sz = (size_t)(((nbits + CHAR_BIT - 1) & -CHAR_BIT) / CHAR_BIT);
+       
+        b->h = h;
+        b->k = k;
         b->alignment = alignment;
+        b->bits = heap_aligned_alloc(h, meta_sz, META_ALIGNMENT);
 
-        b->meta = heap_aligned_alloc(h, meta_sz, 32);
-
-        if (!b->meta) 
+        if (b->bits == NULL) 
                 return -1;
 
-        b->data = heap_aligned_alloc(h, bit(order), alignment);
+        b->data = heap_aligned_alloc(h, bit(k), alignment);
         
-        if (!b->data)
+        if (b->data == NULL)
                 return -1;
         
         list_push(&b->nodes[0].head, b->data);
-
-        if (h->hft & HEAP_DEBUG) {
-                printf("buddy heap allocation:\n");
-                printf("_____________________\n");
-                printf("max order: %i\n", b->order);
-                printf("meta pool adress: %p\n", b->meta);
-                printf("data pool adress: %p\n", b->data);
-                printf("_____________________\n");
-        }
 
         return 0;
 }
 
 void buddy_heap_term(struct buddy_heap *b, struct heap *h)
 {
-        if (!b) return;
+        if (b == NULL) 
+                return;
 
         heap_aligned_free(h, b->data);
-        heap_aligned_free(h, b->meta);
+        heap_aligned_free(h, b->bits);
 }
 
-const uint8_t buddy_nbytes_query_to_index(const size_t nbytes, const enum buddy_order order)
+uint8_t buddy_nbytes_query_to_index(const size_t nbytes, const enum buddy_order k)
 {
-        const size_t ceil = ((nbytes & (nbytes - 1)) != 0) ? pow2_ceil(nbytes) : nbytes; 
-        return (order - lowest_bit_index(ceil));  
+        const size_t ceil = ((nbytes & (nbytes - 1)) != 0) ? pow2_roundup(nbytes) : nbytes; 
+        return (k - trailing_zeros_count(ceil));  
 }
 
-const int8_t buddy_first_splittable_node_index(const uint8_t req, struct list *nodes)
+int8_t buddy_first_splittable_node_index(const uint8_t req, struct list *nodes)
 {
         for (int i = 1; i <= req; i++) {
                 if (nodes[req - i].head != NULL) {
@@ -130,61 +150,53 @@ const int8_t buddy_first_splittable_node_index(const uint8_t req, struct list *n
         return -1; 
 }
 
-void buddy_node_update(const uint8_t order, 
-                       const uint8_t max_order, 
-                       struct list *nodes,
-                       void* ptr, 
-                       const uint32_t split)
+void buddy_node_update(uint8_t k, uint8_t max_k, struct list *nodes, void* ptr, int split)
 {
-        list_pop(&nodes[order].head);
+        list_pop(&nodes[k].head);
 
         if (split) {
-                const uint32_t offset = (1 << (max_order - order)) >> 1;
-                list_push(&nodes[order + 1].head, ptr);
-                list_push(&nodes[order + 1].head, (char *)ptr + offset);
+                const int offset = (1 << (max_k - k)) >> 1;
+                list_push(&nodes[k + 1].head, ptr);
+                list_push(&nodes[k + 1].head, (char *)ptr + offset);
         }
 }
 
-const uint32_t buddy_block_index(const uint8_t order, const uint8_t max_order, const uint32_t offset)
+int buddy_block_index(uint8_t k, uint8_t max_k, int offset)
 {
-        const double mult = 1.f / (1 << (max_order - order));
-        const uint32_t index = (mult * offset) + ((1 << order) - 1);
+        double mult = 1.f / (1 << (max_k - k));
+        int index = (mult * offset) + ((1 << k) - 1);
 
         return index; 
 }
 
-const uint32_t buddy_bit_position(const uint8_t order, const uint8_t max_order, const uint32_t offset) 
+unsigned buddy_bit_position(uint8_t k, uint8_t max_k, const int offset) 
 {
-        const uint32_t block_index = buddy_block_index(order, max_order, offset); 
-        const uint32_t bit_index = (block_index / 2 + block_index % 2);
+        int block_index = buddy_block_index(k, max_k, offset); 
+        unsigned bit_index = (block_index / 2 + block_index % 2);
         
         return bit_index; 
 }
 
-void buddy_bit_update(const uint8_t order, 
-                      const uint32_t max_order, 
-                      uint32_t *bitset, 
-                      void *data, 
-                      void *ptr)
+void buddy_bit_update(uint8_t k, uint8_t max_k, uint32_t *bitset, void *data, void *ptr)
 {
-        const uint32_t offset = (char *)ptr - (char *)data;
-        const uint32_t bit = buddy_bit_position(order, max_order, offset);
+        const int offset = (char *)ptr - (char *)data;
+        const unsigned bit = buddy_bit_position(k, max_k, offset);
 
         bit_switch(bitset, bit);
 }
 
-void buddy_update(struct buddy_heap *b, uint32_t index, void *ptr, uint32_t split) 
+void buddy_update(struct buddy_heap *b, int index, void *ptr, int split) 
 {
         if (ptr == NULL) {
                 //log error here
                 return;
         }
 
-        buddy_node_update(index, b->order, b->nodes, ptr, split);
-        buddy_bit_update(index, b->order, b->meta, b->data, ptr);
+        buddy_node_update(index, b->k, b->nodes, ptr, split);
+        buddy_bit_update(index, b->k, b->bits, b->data, ptr);
 }
 
-void *buddy_block_split(struct buddy_heap *b, uint32_t index, uint32_t split)
+void *buddy_block_split(struct buddy_heap *b, int index, int split)
 {
         void *ptr;
         const int8_t node_index = buddy_first_splittable_node_index(index, b->nodes);
@@ -194,36 +206,41 @@ void *buddy_block_split(struct buddy_heap *b, uint32_t index, uint32_t split)
                 return NULL;
         }
 
-        for (int i = 0; i < index; i++) {
+        for (int i = node_index; i < index; i++) {
                 ptr = (void *)b->nodes[i].head;
                 buddy_update(b, i, ptr, split);
         }
 }
 
-void *buddy_alloc(struct buddy_heap *b, const size_t nbytes) 
+void *buddy_alloc(struct buddy_heap *b, size_t nbytes) 
 {
         void *ptr_0, **ptr_1;
-         
+
         if (nbytes == 0)
                 return NULL;
 
-        const size_t align_offset = (b->alignment - 1) + sizeof(struct buddy_block_prefix);
-        const uint8_t index = buddy_nbytes_query_to_index(nbytes + align_offset, b->order);
-        
-        uint32_t split = (b->nodes[index].head == NULL);
-        
+        const size_t offset = (b->alignment - 1) + sizeof(struct buddy_block_prefix);
+        const uint8_t index = buddy_nbytes_query_to_index(nbytes + offset, b->k);
+
+        int split = (b->nodes[index].head == NULL);
+
         if (split) {
                 buddy_block_split(b, index, split); 
                 split = 0; 
         }
-        
+
         ptr_0 = b->nodes[index].head;
-        ptr_1 = (void *)(((uintptr_t)ptr_0 + align_offset) & ~(b->alignment - 1));
-        
+
+        if (ptr_0 == NULL) {
+                printf("NO BUENO_0\n");
+        }
+
+        ptr_1 = (void *)(((uintptr_t)ptr_0 + offset) & ~(b->alignment - 1));
+
         struct buddy_block_prefix *m = (void *)ptr_1;
         m[-1].k = index;
-        m[-1].address = ptr_0;
-        
+        m[-1].ptr = ptr_0;
+
         buddy_update(b, index, ptr_0, split);
 
         return ptr_1; 
@@ -237,20 +254,20 @@ void buddy_free(struct buddy_heap *b, void *ptr)
         void *ptr_0, *ptr_1;
         struct buddy_block_prefix *m = ptr;
         
-        uint8_t order = m[-1].k;
-        ptr_0 = m[-1].address;
+        uint8_t k = m[-1].k;
+        ptr_0 = m[-1].ptr;
 
-        const uint32_t offset = (uintptr_t)ptr_0 - (uintptr_t)b->data; 
-        const uint32_t bit_index = buddy_bit_position(order, b->order, offset);
+        const int offset = (uintptr_t)ptr_0 - (uintptr_t)b->data; 
+        const unsigned bit_index = buddy_bit_position(k, b->k, offset);
         
-        uint32_t *bitset = b->meta;
+        uint32_t *bitset = b->bits;
 
         if (bit_check(bitset, bit_index) && bit_index != 0) {
 
-                const uint32_t buddy_offset = offset ^ (1 << b->order - order);
+                const int buddy_offset = offset ^ (1 << b->k - k);
                 void *buddy = (void *)((uintptr_t)(b->data + buddy_offset));
                 
-                if (list_delete(&b->nodes[order].head, buddy) == 0) {
+                if (list_delete(&b->nodes[k].head, buddy) == 0) {
                         //log error here
                 }
 
@@ -263,15 +280,19 @@ void buddy_free(struct buddy_heap *b, void *ptr)
                 
                 m = (void *)ptr_1;
 
-                m[-1].k = order - 1;
-                m[-1].address = ptr_0;
+                m[-1].k = k - 1;
+                m[-1].ptr = ptr_0;
 
                 buddy_free(b, ptr_1);
 
                 bit_switch(bitset, bit_index);
         }
         
-        list_push(&b->nodes[order].head, ptr_0); 
+        if (b->h->hft & HEAP_DEBUG) {
+                if (k == 0) printf("buddy_heap info: all memory blocks coalesced\n"); 
+        }
+
+        list_push(&b->nodes[k].head, ptr_0); 
         bit_switch(bitset, bit_index);
 }
 
