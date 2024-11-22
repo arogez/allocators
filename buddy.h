@@ -40,6 +40,14 @@ enum buddy_order : uint8_t {
         BUDDY_MIN_K = 6
 };
 
+enum buddy_flags {
+        B_NOSPLIT,
+        B_SPLIT
+};
+
+#define BUDDY_SPLIT bit(B_SPLIT)
+#define BUDDY_NOSPLIT bit(B_NOSPLIT)
+
 /* Description of the approach ("buddy system reservation & liberation") can be found in 
  * Knuth's The Art of Computer Programming.
  *
@@ -150,17 +158,6 @@ int8_t buddy_first_splittable_node_index(const uint8_t req, struct list *nodes)
         return -1; 
 }
 
-void buddy_node_update(uint8_t k, uint8_t max_k, struct list *nodes, void* ptr, int split)
-{
-        list_pop(&nodes[k].head);
-
-        if (split) {
-                const int offset = (1 << (max_k - k)) >> 1;
-                list_push(&nodes[k + 1].head, ptr);
-                list_push(&nodes[k + 1].head, (char *)ptr + offset);
-        }
-}
-
 int buddy_block_index(uint8_t k, uint8_t max_k, int offset)
 {
         double mult = 1.f / (1 << (max_k - k));
@@ -185,18 +182,24 @@ void buddy_bit_update(uint8_t k, uint8_t max_k, uint32_t *bitset, void *data, vo
         bit_switch(bitset, bit);
 }
 
+void buddy_node_update(uint8_t k, uint8_t max_k, struct list *nodes, void* ptr, int split)
+{
+        list_pop(&nodes[k].head);
+
+        if (split & BUDDY_SPLIT) {
+                const int offset = (1 << (max_k - k)) >> 1;
+                list_push(&nodes[k + 1].head, ptr);
+                list_push(&nodes[k + 1].head, (char *)ptr + offset);
+        }
+}
+
 void buddy_update(struct buddy_heap *b, int index, void *ptr, int split) 
 {
-        if (ptr == NULL) {
-                //log error here
-                return;
-        }
-
         buddy_node_update(index, b->k, b->nodes, ptr, split);
         buddy_bit_update(index, b->k, b->bits, b->data, ptr);
 }
 
-void *buddy_block_split(struct buddy_heap *b, int index, int split)
+void *buddy_block_reserve(struct buddy_heap *b, int index, int *res)
 {
         void *ptr;
         const int8_t node_index = buddy_first_splittable_node_index(index, b->nodes);
@@ -208,40 +211,41 @@ void *buddy_block_split(struct buddy_heap *b, int index, int split)
 
         for (int i = node_index; i < index; i++) {
                 ptr = (void *)b->nodes[i].head;
-                buddy_update(b, i, ptr, split);
+                buddy_node_update(i, b->k, b->nodes, ptr, *res);
+                buddy_bit_update(i, b->k, b->bits, b->data, ptr);
         }
+
+        *res = *res & ~BUDDY_SPLIT | BUDDY_NOSPLIT;
 }
 
 void *buddy_alloc(struct buddy_heap *b, size_t nbytes) 
 {
         void *ptr_0, **ptr_1;
-
+        int res = 0;
+        
         if (nbytes == 0)
                 return NULL;
 
         const size_t offset = (b->alignment - 1) + sizeof(struct buddy_block_prefix);
         const uint8_t index = buddy_nbytes_query_to_index(nbytes + offset, b->k);
 
-        int split = (b->nodes[index].head == NULL);
+        if (b->nodes[index].head == NULL) 
+                res |= BUDDY_SPLIT;
+        else
+                res |= BUDDY_NOSPLIT;
 
-        if (split) {
-                buddy_block_split(b, index, split); 
-                split = 0; 
+        if (res & BUDDY_SPLIT) {
+                buddy_block_reserve(b, index, &res); 
         }
 
         ptr_0 = b->nodes[index].head;
-
-        if (ptr_0 == NULL) {
-                printf("NO BUENO_0\n");
-        }
+        buddy_node_update(index, b->k, b->nodes, ptr_0, res);
+        buddy_bit_update(index, b->k, b->bits, b->data, ptr_0);
 
         ptr_1 = (void *)(((uintptr_t)ptr_0 + offset) & ~(b->alignment - 1));
-
         struct buddy_block_prefix *m = (void *)ptr_1;
         m[-1].k = index;
         m[-1].ptr = ptr_0;
-
-        buddy_update(b, index, ptr_0, split);
 
         return ptr_1; 
 }
