@@ -220,7 +220,7 @@ void *buddy_block_reserve(struct buddy_heap *b, int index, int *res)
 
 void *buddy_alloc(struct buddy_heap *b, size_t nbytes) 
 {
-        void *ptr_0, **ptr_1;
+        void *ptr_0, *ptr_1;
         int res = 0;
         
         if (nbytes == 0)
