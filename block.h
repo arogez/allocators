@@ -32,7 +32,7 @@ enum block_limits {
         BLOCK_HEAP_MAX = UCHAR_MAX
 };
 
-struct u8_block_heap {
+struct block_heap {
         size_t          block_size;
         uint8_t         nblocks;
         int             first_free_block;
@@ -42,24 +42,27 @@ struct u8_block_heap {
 void block_heap_reset(void *ptr, size_t nbytes, uint8_t n)
 {
         *(uint8_t*)ptr = (uint8_t)(BLOCK_HEAP_MAX - (--n));
-
+        
         if (n > 0) 
                 block_heap_reset(ptr + (uintptr_t)nbytes, nbytes, n);
 }
 
-int block_heap_init(struct u8_block_heap *b, struct heap *h, size_t nbytes, size_t alignment)
+int block_heap_init(struct block_heap *b, struct heap *h, size_t nbytes, size_t alignment)
 {
         b->nblocks = BLOCK_HEAP_MAX;
         b->first_free_block = 0;
-       
+        b->block_size = nbytes; 
         b->data = heap_aligned_alloc(h, nbytes * BLOCK_HEAP_MAX, alignment);
  
         block_heap_reset(b->data, nbytes, BLOCK_HEAP_MAX);
 }
 
-void *block_alloc(struct u8_block_heap *a)
+void *block_alloc(struct block_heap *a)
 {
-        void *ptr = a->data + (uintptr_t)(a->block_size * a->first_free_block);
+        if (a->nblocks == BLOCK_HEAP_MAX)
+                return NULL;
+
+        void *ptr = (void *)((uintptr_t)a->data + (a->block_size * a->first_free_block));
         
         a->first_free_block = *(uint8_t *)ptr;
         a->nblocks--;
@@ -67,13 +70,32 @@ void *block_alloc(struct u8_block_heap *a)
         return ptr;
 }
 
-void block_free(void *ptr) 
+int block_is_valid(void *ptr, void *head, int nblocks, size_t block_size) 
+{
+        void *tail = (void *)((uintptr_t)head + (BLOCK_HEAP_MAX * block_size));
+        uintptr_t offset = (uintptr_t)ptr - (uintptr_t)head;
+        
+        return (ptr >= head && ptr < tail && ((offset % block_size) == 0)) ? 1 : 0;
+}
+
+void block_free(struct block_heap *al, void *ptr) 
 {
         if (ptr == NULL)
                 return;
+       
+        /* check if ptr address is in correct address range and multiple of block_size */
+        if (block_is_valid(ptr, al->data, al->nblocks, al->block_size) == 0) {
+                return;
+        }
+        
+        uint8_t index = (uint8_t)((uintptr_t)(ptr - al->data) / al->block_size);
+        
+        *(uint8_t *)ptr = al->first_free_block;
+        al->first_free_block = index;
+        al->nblocks--;
 }
 
-void block_heap_term(struct u8_block_heap *b, struct heap *h)
+void block_heap_term(struct block_heap *b, struct heap *h)
 {
         if (b == NULL) 
                 return;
