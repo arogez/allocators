@@ -26,12 +26,10 @@
 #define BUDDY_H
 
 #include <limits.h>
-#include <stdint.h>
 
 #include "heap.h"
 #include "bit.h"
 #include "list.h"
-#include "pow.h"
 
 #define META_ALIGNMENT 32
 
@@ -57,8 +55,9 @@ enum buddy_flags {
  *      Metadata is an array of bits for tracking the availability of each buddy in a pair of 
  *      identical size ranging from 2^K_MAX_ORDER TO 2^K_MIN_ORDER.
  *      1 bit overhead per two blocks of same size and buddies.
- *      Bit are set and unset when allocated and deallocated using helper macros found in bit.h.
- *      The value of the bit controls reservation and coalescion at deallocation.
+ *      Bits are set and unset when allocated and deallocated using helper macros found in bit.h.
+ *      The value of the bit controls whether a block is reserved at allocation or coalesced at 
+ *      deallocation.
  *
  *      +--------------+-------+--------------------------------------------------+
  *      |  function    |  bit  |  result                                          | 
@@ -72,7 +71,7 @@ enum buddy_flags {
  *
  *      We use a prefix on each allocated block of memory return by the buddy allocator.
  *      The size of the prefix depends on the alignment provided at initialization.
- *      The prefix store the order(k) of the allocated block and the address of the
+ *      The prefix stores the order(k) of the allocated block and the address of the
  *      block to be used at deallocation. 
  *           
  *      ** Block of size 2^k

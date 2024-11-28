@@ -4,6 +4,7 @@
 #ifndef HEAP_H
 #define HEAP_H
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -111,6 +112,9 @@ void heap_free(struct heap *h, void *ptr)
 
 void heap_aligned_free(struct heap *h, void *ptr)
 {
+        if(h == NULL)
+                return; 
+
         heap_free(h, ((void**)ptr)[-1]);
 }
 
