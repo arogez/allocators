@@ -29,21 +29,20 @@ void *scratch_alloc(struct scratch_heap *scr, size_t nbytes, size_t alignment)
 
         if (alignment == 0 || (alignment & (alignment - 1)) != 0)
                 return NULL;
-
-        const size_t alloc = nbytes + alignment - 1;
-
-        if ((void*)((uintptr_t)scr->head + alloc) > scr->tail){ 
-                printf("no allocation\n");
-                return NULL;
-        }
         
-        printf("test scr : %p\n", scr->head);
+        const size_t alloc = ((uintptr_t)scr->head % alignment == 0) ? nbytes : (nbytes + alignment - 1);
+
+        if ((void*)((uintptr_t)scr->head + alloc) > scr->tail) 
+                return NULL;
         
         ptr_0 = scr->head;
-        ptr_1 = (void*)(((uintptr_t)ptr_0 + (alignment - 1)) & ~(alignment - 1));
-
         scr->head = (void *)((uintptr_t)scr->head + alloc);
-        return ptr_1;
+
+        if (alloc > nbytes) {
+                ptr_0 = (void*)(((uintptr_t)ptr_0 + (alignment - 1)) & ~(alignment - 1));
+        }
+        
+        return ptr_0;
 }
 
 void scratch_heap_term(struct scratch_heap *scr, struct heap *h) 
