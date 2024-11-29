@@ -12,7 +12,6 @@ struct list_node {
 
 void list_push(struct list_node **head, void *ptr) 
 {
-
         if (ptr == NULL) 
                 return;
 
