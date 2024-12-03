@@ -32,21 +32,19 @@ typedef void ctor();
 enum trait_cache_flags : unsigned {
         TRAIT_HWCACHE_ALIGN,
         TRAIT_NOCOLLECT,
-        TRAIT_BUDDYALLOC
-};
+        TRAIT_BUDDYALLOC,
+        TRAIT_PACKED
+} tmem_cache_flags;
 
-enum trait_cache_flags tmem_cache_flags;
 #define TMEM_CACHE_COMMON_FLAGS (TRAIT_HWCACHE_ALIGN | TRAIT_NOCOLLECT | TRAIT_BUDDYALLOC) 
 
-struct list tmem_caches;
+struct t list tmem_caches;
 
 struct tmem_cache {
         
         struct list     traits;
         const char      *name;
         size_t          trait_size;
-        
-
         //int           is_packed;
         //size_t        color;
         //int           color_offset;
