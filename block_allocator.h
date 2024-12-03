@@ -59,7 +59,7 @@ int block_heap_init(struct block_heap *b, struct heap *h, size_t nbytes, size_t 
 
 void *block_alloc(struct block_heap *a)
 {
-        if (a->nblocks == BLOCK_HEAP_MAX)
+        if (a->nblocks == 0)
                 return NULL;
 
         void *ptr = (void *)((uintptr_t)a->data + (a->block_size * a->first_free_block));
@@ -92,7 +92,7 @@ void block_free(struct block_heap *al, void *ptr)
         
         *(uint8_t *)ptr = al->first_free_block;
         al->first_free_block = index;
-        al->nblocks--;
+        al->nblocks++;
 }
 
 void block_heap_term(struct block_heap *b, struct heap *h)

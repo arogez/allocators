@@ -131,13 +131,13 @@ int buddy_heap_init(struct buddy_heap *bdy, struct heap *heap, uint8_t k, size_t
         return 0;
 }
 
-void buddy_heap_term(struct buddy_heap *b, struct heap *h)
+void buddy_heap_term(struct buddy_heap *bdy, struct heap *hp)
 {
-        if (b == NULL) 
+        if (bdy == NULL) 
                 return;
 
-        heap_aligned_free(h, b->data);
-        heap_aligned_free(h, b->bits);
+        heap_aligned_free(hp, bdy->data);
+        heap_aligned_free(hp, bdy->bits);
 }
 
 uint8_t buddy_nbytes_query_to_index(const size_t nbytes, const enum buddy_order k)
