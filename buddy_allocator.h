@@ -1,4 +1,4 @@
-/* buddy.h -- Implementation of the buddy allocation strategy
+/* buddy_allocator.h -- Implementation of the buddy allocation strategy
  * 
  * MIT License
  * Copyright (c) 2024 arogez

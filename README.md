@@ -10,9 +10,9 @@ use in other personal projects.
 
 ### List of headers with functions to allocate memory: 
 - heap.h: allocates and tracks chunks of memory allocated with malloc
-- buddy.h: partitions memory in power-of-2 sized blocks, merges blocks on deallocation
-- block.h: partitions memory in 255 fixed-size blocks, returns blocks to pool on deallocation
-- scratch.h: stacks consecutive allocations of user-defined sizes. no deallocation.
+- buddy_allocator.h: partitions memory in power-of-2 sized blocks, merges blocks on deallocation
+- block_allocator.h: partitions memory in 255 fixed-size blocks, returns blocks to pool on deallocation
+- scratch_allocator.h: stacks consecutive allocations of user-defined sizes. no deallocation.
 
 > [!NOTE]
 > [IN PROGRESS] future additions: slab allocator, stack allocator
